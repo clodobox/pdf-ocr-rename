@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 import shutil
 import sys
 import time
@@ -20,10 +18,13 @@ from watchdog.observers.polling import PollingObserver
 import yaml
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 
+from renaming import build_filename, resolve_duplicate
+
 with open('./config.yml', 'r') as file:
     config = yaml.safe_load(file)
 
 OCR_CONFIG = {**config['ocr']}
+RENAME_CONFIG = config['rename']
 AUTOCORRECT_CONFIG = config['autocorrect']
 
 def delete_old_logs(log_dir, retention_days):
@@ -148,69 +149,31 @@ def execute_ocrmypdf(file_path):
     else:
         logger.info('[watcher] OCR is done with errors')
 
-def autocorrect_match(match, autocorrect_config):
-    match = match.replace(" ", "")
-
-    for rule in autocorrect_config['rules']:
-        if re.match(rule['pattern'], match):
-            match = re.sub(rule['pattern'], rule['replacement'], match)
-            break
-
-    parts = re.match(autocorrect_config['regex'], match)
-
-    if parts is not None:
-        prefix = parts.group(1)
-        second_part = parts.group(2).zfill(2)
-        last_part = parts.group(3).zfill(4)
-
-        for old, new in autocorrect_config['format']['second_part_mapping'].items():
-            second_part = second_part.replace(old, new)
-        for old, new in autocorrect_config['format']['last_part_mapping'].items():
-            last_part = last_part.replace(old, new)
-
-        if prefix in autocorrect_config['format']['prefix_mapping']:
-            second_part = "2" + second_part[1:]
-
-        corrected = f"{prefix}-{second_part}-{last_part}"
-        return corrected
-    else:
-        return match
-
 def process_pdf(path):
     path_str = str(path)
-    if path_str.endswith('.pdf'):
-        print(f'[renamer] Processing file: {path_str}')
+    if not path_str.endswith('.pdf'):
+        return
 
-        try:
-            text = extract_text(path_str)
-            matches = re.findall(r'(?:P0|PO|SPO|RNWS|SGR|SSR) ?\d?-?\d{1,2}-\d{1,4}', text, re.IGNORECASE)
-            matches = [match.upper() for match in matches]
+    print(f'[renamer] Processing file: {path_str}')
+    try:
+        text = extract_text(path_str)
+        final_name = build_filename(text, RENAME_CONFIG, AUTOCORRECT_CONFIG)
+        if final_name is None:
+            return
 
-            if matches:
-                matches = [autocorrect_match(match, AUTOCORRECT_CONFIG) for match in matches]
-                matches = list(set(matches))
-                matches.sort()
-                final_name = '_'.join(matches) + '.pdf'
-            if not matches:
-                return
-            max_length = 150 - 4
-            if len(final_name) > max_length:
-                final_name = final_name[:max_length] + '.pdf'
-
-            if os.path.exists(os.path.join(OCR_CONFIG['output_directory'], final_name)):
-                num = 1
-                while os.path.exists(os.path.join(OCR_CONFIG['output_directory'], final_name[:-4] + f'({num}).pdf')):
-                    num += 1
-                final_name = final_name[:-4] + f'({num}).pdf'
-            os.rename(path_str, os.path.join(os.path.dirname(path_str), final_name))
-            print(f'[renamer] Processed file: {final_name}')
-        except Exception as e:
-            print(f'[renamer] Error processing file: {path_str}. Error: {e}')
-            if os.path.exists(path_str):
-                if not os.path.exists('error'):
-                    os.mkdir('error')
-                shutil.move(path_str, os.path.join('error', os.path.basename(path_str)))
-                print(f'[renamer] Moved file with error to error folder: {path_str}')
+        output_dir = os.path.dirname(path_str)
+        # os.rename overwrites an existing destination on POSIX, which is how the
+        # 'overwrite' duplicate_strategy takes effect.
+        final_name = resolve_duplicate(output_dir, final_name, RENAME_CONFIG.get('duplicate_strategy'))
+        os.rename(path_str, os.path.join(output_dir, final_name))
+        print(f'[renamer] Processed file: {final_name}')
+    except Exception as e:
+        print(f'[renamer] Error processing file: {path_str}. Error: {e}')
+        if os.path.exists(path_str):
+            if not os.path.exists('error'):
+                os.mkdir('error')
+            shutil.move(path_str, os.path.join('error', os.path.basename(path_str)))
+            print(f'[renamer] Moved file with error to error folder: {path_str}')
 
 class HandleObserverEvent(PatternMatchingEventHandler):
     def on_any_event(self, event):

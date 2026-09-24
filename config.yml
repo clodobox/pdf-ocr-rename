@@ -30,6 +30,12 @@ ocr:
     - '*.pdf'
     - '*.PDF'
 
+rename:
+  pattern: '(?:P0|PO|SPO|RNWS|SGR|SSR) ?\d?-?\d{1,2}-\d{1,4}'  # Regex used to find identifiers in the OCR'd text (case-insensitive)
+  separator: '_'  # Separator used to join multiple identifiers found in the same file
+  max_filename_length: 150  # Maximum length (in characters) of the generated filename, including the extension
+  duplicate_strategy: 'increment'  # What to do when the generated filename already exists: increment, overwrite, timestamp
+
 autocorrect:
   regex: '([A-Z]+)[-]?(\d{1,2})[-]?(\d{1,4})'
   rules:
