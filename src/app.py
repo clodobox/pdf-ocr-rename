@@ -61,14 +61,6 @@ setup_logging(config)
 
 # pylint: disable=logging-format-interpolation
 
-def delete_old_logs(log_dir, retention_days):
-    now = datetime.now()
-    for file in log_dir.glob('*'):
-        if file.is_file():
-            modified_time = datetime.fromtimestamp(file.stat().st_mtime)
-            if (now - modified_time).days > retention_days:
-                file.unlink()
-
 def wait_for_file_ready(file_path):
     retries = OCR_CONFIG.get('retries_loading_file', 5)  # Get the number of retries from the config, default to 5
     poll_seconds = OCR_CONFIG.get('poll_new_file_seconds', 5)  # Get the number of seconds to wait between retries, default to 5
@@ -136,9 +128,13 @@ def execute_ocrmypdf(file_path):
             output_file=str(output_path),
             **ocr_args,
         )
-    except ValueError as e:
+    except (ValueError, ocrmypdf.ExitCodeException) as e:
         logger.error(f"[watcher] OCRmyPDF failed with error: {str(e)}")
-        # Handle error case, e.g. move file to error directory
+        if file_path.exists():
+            error_dir = Path('error')
+            error_dir.mkdir(exist_ok=True)
+            shutil.move(str(file_path), str(error_dir / file_path.name))
+            logger.info(f'[watcher] Moved file with error to error folder: {file_path}')
         return
 
     if exit_code == 0:
