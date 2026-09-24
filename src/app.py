@@ -62,6 +62,14 @@ setup_logging(config)
 
 # pylint: disable=logging-format-interpolation
 
+def move_to_error_folder(file_path, error_dir):
+    file_path = Path(file_path)
+    if not file_path.exists():
+        return False
+    Path(error_dir).mkdir(parents=True, exist_ok=True)
+    shutil.move(str(file_path), str(Path(error_dir) / file_path.name))
+    return True
+
 def wait_for_file_ready(file_path):
     retries = OCR_CONFIG.get('retries_loading_file', 5)  # Get the number of retries from the config, default to 5
     poll_seconds = OCR_CONFIG.get('poll_new_file_seconds', 5)  # Get the number of seconds to wait between retries, default to 5
@@ -131,10 +139,7 @@ def execute_ocrmypdf(file_path):
         )
     except (ValueError, ocrmypdf.ExitCodeException) as e:
         logger.error(f"[watcher] OCRmyPDF failed with error: {str(e)}")
-        if file_path.exists():
-            error_dir = Path('error')
-            error_dir.mkdir(exist_ok=True)
-            shutil.move(str(file_path), str(error_dir / file_path.name))
+        if move_to_error_folder(file_path, OCR_CONFIG['error_directory']):
             logger.info(f'[watcher] Moved file with error to error folder: {file_path}')
         return
 
@@ -169,10 +174,7 @@ def process_pdf(path):
         print(f'[renamer] Processed file: {final_name}')
     except Exception as e:
         print(f'[renamer] Error processing file: {path_str}. Error: {e}')
-        if os.path.exists(path_str):
-            if not os.path.exists('error'):
-                os.mkdir('error')
-            shutil.move(path_str, os.path.join('error', os.path.basename(path_str)))
+        if move_to_error_folder(path_str, OCR_CONFIG['error_directory']):
             print(f'[renamer] Moved file with error to error folder: {path_str}')
 
 class HandleObserverEvent(PatternMatchingEventHandler):

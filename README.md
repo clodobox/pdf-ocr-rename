@@ -48,6 +48,9 @@ to `docker-comspose`.**
 
 ## Configuration
 
+`ocr.error_directory` (default `error`) is where files are moved when OCR or renaming fails, so
+you can point it anywhere without touching the code.
+
 Everything about how a file is matched and renamed lives in `config.yml`, under `rename:`:
 
 * `pattern`: the regex used to find identifiers in the OCR'd text (case-insensitive).

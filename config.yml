@@ -2,6 +2,7 @@ ocr:
   input_directory: 'input'
   output_directory: 'processed'
   backup_directory: ''
+  error_directory: 'error'  # Where files that fail OCR or renaming are moved
   on_success_delete: true
   force_ocr: true
   language: 'fra+eng+deu'
