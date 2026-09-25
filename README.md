@@ -46,6 +46,48 @@ Just run `make` to display the available commands. The `Makefile` detects if
 `podman-compose` is installed and will try to use it. Otherwise it will fallback
 to `docker-comspose`.**
 
+## Configuration
+
+`ocr.error_directory` (default `error`) is where files are moved when OCR or renaming fails, so
+you can point it anywhere without touching the code.
+
+Everything about how a file is matched and renamed lives in `config.yml`, under `rename:`:
+
+* `pattern`: the regex used to find identifiers in the OCR'd text (case-insensitive).
+* `separator`: what joins multiple identifiers found in the same file.
+* `max_filename_length`: hard cap on the generated filename length, extension included.
+* `duplicate_strategy`: what to do when the generated name already exists in `processed/` —
+  `increment` (`name(1).pdf`, the default), `overwrite`, or `timestamp` (`name_20240101120000.pdf`).
+
+`autocorrect:` controls how a raw match is cleaned up and reformatted before it's used in the filename:
+
+* `regex`: parses a cleaned-up match into named groups, e.g. `(?P<prefix>[A-Z]+)-(?P<second_part>\d+)-(?P<last_part>\d+)`.
+  Any group named here can be used below and in `output_format`.
+* `rules`: whole-string replacements applied before parsing (first match wins), e.g. to fix a misread prefix
+  (`P0-` → `PO-`).
+* `default_character_mapping`: character confusions (e.g. OCR reading `O` as `0`) applied to every group in
+  `groups:` that doesn't define its own `character_mapping`.
+* `groups.<name>`: optional per-group settings — `zfill` (zero-pad to N digits), `character_mapping` (override
+  the default for this group), and `force_first_char` (force a group's first character to a fixed `value` when
+  another group, named in `depends_on_group`, has one of the values in `when_value_in` — used for business
+  rules like "this series is always dated in the 2020s"). A group not listed here is used exactly as matched.
+* `output_format`: a template rebuilt from the named groups once corrected, e.g. `'{prefix}-{second_part}-{last_part}'`.
+
+Text normalization (unicode dash variants, non-breaking spaces, stray whitespace) happens automatically before
+any of the above runs.
+
+### Trying out a pattern
+
+`src/configure.py` lets you test a `pattern`/`separator`/`max_filename_length` against a sample text and
+preview the resulting filename, without touching the running watcher:
+
+```
+python3 src/configure.py
+```
+
+It accepts a path to a `.pdf` or `.txt` file, or lets you paste text directly. At the end it prints a
+`rename:` YAML snippet you can copy into `config.yml`.
+
 ## Information
 
 * This is an unfinished project that will certainly never be completed.
