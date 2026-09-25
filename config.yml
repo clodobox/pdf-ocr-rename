@@ -38,7 +38,12 @@ rename:
   duplicate_strategy: 'increment'  # What to do when the generated filename already exists: increment, overwrite, timestamp
 
 autocorrect:
-  regex: '([A-Z]+)[-]?(\d{1,2})[-]?(\d{1,4})'
+  # Regex used to parse a cleaned-up match into named groups: `(?P<name>...)`.
+  # Every group referenced under `groups:` or in `output_format` must be named here.
+  regex: '(?P<prefix>[A-Z]+)[-]?(?P<second_part>\d{1,2})[-]?(?P<last_part>\d{1,4})'
+
+  # Whole-string replacements applied before parsing (e.g. to fix a misread prefix).
+  # The first matching pattern wins; the rest are skipped.
   rules:
     - pattern: '^P0-'
       replacement: 'PO'
@@ -50,27 +55,31 @@ autocorrect:
       replacement: 'SPO'
     - pattern: '^56R-'
       replacement: 'SGR'
-  format:
-    prefix_mapping:
-      - 'PO'
-      - 'SPO'
-      - 'RNWS'
-      - 'SGR'
-      - 'SSR'
-    second_part_mapping:
-      'O': '0'
-      'I': '1'
-      'S': '5'
-      'B': '8'
-      'Z': '2'
-      'G': '6'
-    last_part_mapping:
-      'O': '0'
-      'I': '1'
-      'S': '5'
-      'B': '8'
-      'Z': '2'
-      'G': '6'
+
+  # Character confusions applied to every group, unless that group defines its own
+  # character_mapping below (typical OCR misreads: letter that looks like a digit).
+  default_character_mapping:
+    'O': '0'
+    'I': '1'
+    'S': '5'
+    'B': '8'
+    'Z': '2'
+    'G': '6'
+
+  # Per-group post-processing, applied after `regex` parses the match. A group not
+  # listed here is used as-is (no padding; default_character_mapping still applies).
+  groups:
+    second_part:
+      zfill: 2  # pad to 2 digits, e.g. '3' -> '03'
+      force_first_char:  # business rule: these series are always dated in the 2020s
+        depends_on_group: 'prefix'
+        when_value_in: ['PO', 'SPO', 'RNWS', 'SGR', 'SSR']
+        value: '2'
+    last_part:
+      zfill: 4  # pad to 4 digits, e.g. '27' -> '0027'
+
+  # Template rebuilt from the named groups above once each is corrected.
+  output_format: '{prefix}-{second_part}-{last_part}'
 
 logging:
   directory: 'log'

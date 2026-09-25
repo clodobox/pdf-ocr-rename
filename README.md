@@ -59,8 +59,22 @@ Everything about how a file is matched and renamed lives in `config.yml`, under 
 * `duplicate_strategy`: what to do when the generated name already exists in `processed/` —
   `increment` (`name(1).pdf`, the default), `overwrite`, or `timestamp` (`name_20240101120000.pdf`).
 
-`autocorrect:` still controls how a raw match is cleaned up and normalized (OCR typo fixes, prefix/character
-mappings) before it's used in the filename.
+`autocorrect:` controls how a raw match is cleaned up and reformatted before it's used in the filename:
+
+* `regex`: parses a cleaned-up match into named groups, e.g. `(?P<prefix>[A-Z]+)-(?P<second_part>\d+)-(?P<last_part>\d+)`.
+  Any group named here can be used below and in `output_format`.
+* `rules`: whole-string replacements applied before parsing (first match wins), e.g. to fix a misread prefix
+  (`P0-` → `PO-`).
+* `default_character_mapping`: character confusions (e.g. OCR reading `O` as `0`) applied to every group in
+  `groups:` that doesn't define its own `character_mapping`.
+* `groups.<name>`: optional per-group settings — `zfill` (zero-pad to N digits), `character_mapping` (override
+  the default for this group), and `force_first_char` (force a group's first character to a fixed `value` when
+  another group, named in `depends_on_group`, has one of the values in `when_value_in` — used for business
+  rules like "this series is always dated in the 2020s"). A group not listed here is used exactly as matched.
+* `output_format`: a template rebuilt from the named groups once corrected, e.g. `'{prefix}-{second_part}-{last_part}'`.
+
+Text normalization (unicode dash variants, non-breaking spaces, stray whitespace) happens automatically before
+any of the above runs.
 
 ### Trying out a pattern
 

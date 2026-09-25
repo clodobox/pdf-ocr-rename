@@ -12,32 +12,69 @@ def extract_matches(text, pattern):
     return [match.upper() for match in matches]
 
 
-def autocorrect_match(match, autocorrect_config):
-    match = match.replace(" ", "")
+# OCR commonly renders a hyphen as one of these lookalike dashes, and a hard space
+# as a non-breaking space; normalize both before anything else runs.
+_DASH_VARIANTS = '‐‑‒–—―'
+_CHAR_NORMALIZATION = {c: '-' for c in _DASH_VARIANTS} | {'\xa0': ' '}
 
-    for rule in autocorrect_config['rules']:
+
+def _normalize(match):
+    for old, new in _CHAR_NORMALIZATION.items():
+        match = match.replace(old, new)
+    return re.sub(r'\s+', '', match)
+
+
+def autocorrect_match(match, autocorrect_config):
+    """Clean up and reformat a raw match using autocorrect_config.
+
+    `regex` parses the match into named groups (`(?P<name>...)`). Each group can be
+    post-processed via `groups.<name>` (zero-padding, a character mapping, or a
+    `force_first_char` rule copying a fixed value in based on another group's
+    value), then `output_format` rebuilds the final string from those groups.
+    """
+    match = _normalize(match)
+
+    for rule in autocorrect_config.get('rules', []):
         if re.match(rule['pattern'], match):
             match = re.sub(rule['pattern'], rule['replacement'], match)
             break
 
     parts = re.match(autocorrect_config['regex'], match)
-
     if parts is None:
         return match
 
-    prefix = parts.group(1)
-    second_part = parts.group(2).zfill(2)
-    last_part = parts.group(3).zfill(4)
+    groups_config = autocorrect_config.get('groups', {})
+    default_mapping = autocorrect_config.get('default_character_mapping', {})
 
-    for old, new in autocorrect_config['format']['second_part_mapping'].items():
-        second_part = second_part.replace(old, new)
-    for old, new in autocorrect_config['format']['last_part_mapping'].items():
-        last_part = last_part.replace(old, new)
+    values = {}
+    for name, value in parts.groupdict().items():
+        if value is None:
+            continue
+        # Only groups listed under `groups:` are post-processed; others (e.g. an
+        # alphabetic prefix) are kept exactly as matched.
+        if name in groups_config:
+            group_config = groups_config[name]
 
-    if prefix in autocorrect_config['format']['prefix_mapping']:
-        second_part = "2" + second_part[1:]
+            zfill = group_config.get('zfill')
+            if zfill:
+                value = value.zfill(zfill)
 
-    return f"{prefix}-{second_part}-{last_part}"
+            for old, new in group_config.get('character_mapping', default_mapping).items():
+                value = value.replace(old, new)
+
+        values[name] = value
+
+    for name, group_config in groups_config.items():
+        force = group_config.get('force_first_char')
+        if not force or name not in values:
+            continue
+        if values.get(force['depends_on_group']) in force['when_value_in']:
+            values[name] = force['value'] + values[name][1:]
+
+    try:
+        return autocorrect_config['output_format'].format(**values)
+    except KeyError:
+        return match
 
 
 def build_filename(text, rename_config, autocorrect_config):
